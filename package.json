@@ -1,0 +1,23 @@
+{
+  "name": "fibonacciasynctest",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node ./bin/www",
+    "start:all": "pm2 start ./bin/www -i 0",
+    "stop:all": "pm2 delete all",
+    "list": "pm2 list",
+    "reload": "pm2 reload all",
+    "monitor": "pm2 monit"
+  },
+  "dependencies": {
+    "body-parser": "~1.17.1",
+    "cookie-parser": "~1.4.3",
+    "debug": "~2.6.3",
+    "express": "~4.15.2",
+    "jade": "~1.11.0",
+    "morgan": "~1.8.1",
+    "pm2": "^2.6.1",
+    "serve-favicon": "~2.4.2"
+  }
+}

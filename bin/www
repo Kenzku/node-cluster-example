@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+let cluster = require('cluster');
+let debug = require('debug')('FibonacciAsync:server');
+let http = require('http');
+let defaultPort = '3001';
+let defaultIsCluster = 'true';
+
+let workTypes = ['type-1', 'type-2', 'type-3', 'type-4'];
+/*shall added offloading for micro-services etc*/
+let currentWorkerTypesMaps = new Map();
+
+function getArg(args = [], filter = '', defaultValue = '') {
+    if (filter === '') {
+        return null;
+    }
+    let result = defaultValue;
+    let lengthOfFilter = filter.length;
+    let isResultInArg = args.filter(v => v.substring(0, lengthOfFilter) === filter);
+    if (!!isResultInArg && !!isResultInArg[0]) {
+        result = isResultInArg[0].split('=');
+        result = result.length === 2 ? result[1] : defaultValue;
+    }
+    return result;
+}
+
+function startApp() {
+    // Workers share the TCP connection in this server
+
+    let app = require('../app');
+    /**
+     * Get port from environment and store in Express.
+     */
+    let port = normalizePort(getArg(process.argv, 'port=', defaultPort) || defaultPort);
+    app.set('port', port);
+
+    /**
+     * Create HTTP server.
+     */
+    let server = http.createServer(app);
+
+    /**
+     * Listen on provided port, on all network interfaces.
+     */
+
+    server.listen(port);
+    server.on('error', onError);
+    server.on('listening', onListening);
+
+    /**
+     * Event listener for HTTP server "listening" event.
+     */
+
+    function onListening() {
+        let addr = server.address();
+        let bind = typeof addr === 'string'
+            ? 'pipe ' + addr
+            : 'port ' + addr.port;
+        debug('Listening on ' + bind);
+    }
+}
+
+function spawnWorker(index = 0) {
+    let worker = cluster.fork();
+    let workType = workTypes[index % workTypes.length];
+
+    currentWorkerTypesMaps.set(worker.id, workType);
+    return worker;
+}
+
+function reSpawnWorker(workerId) {
+    if (!workerId) {
+        return false;
+    }
+    let workType = currentWorkerTypesMaps.get(workerId);
+    currentWorkerTypesMaps.delete(workerId);
+
+    let worker = cluster.fork();
+
+    currentWorkerTypesMaps.set(worker.id, workType);
+    return worker;
+}
+
+if (cluster.isMaster) {
+    let isClusterMode = getArg(process.argv, 'cluster=', defaultIsCluster) === 'true'; // convert from string to bool
+    if (isClusterMode) {
+        let numWorkers = require('os').cpus().length;
+
+        console.log('Master cluster setting up ' + numWorkers + ' workers...');
+
+        for (let i = 0; i < numWorkers; i++) {
+            spawnWorker(i);
+        }
+
+        cluster.on('online', worker => {
+            console.log('Worker ' + worker.process.pid + ' is online', 'doing:', currentWorkerTypesMaps.get(worker.id));
+        });
+
+        /*Error handling*/
+        cluster.on('exit', (worker, code, signal) => {
+            console.log('Worker ' + worker.process.pid + ' died with code: ' + code + ', and signal: ' + signal);
+
+            let isSuccess = reSpawnWorker(worker.id);
+            console.log('Starting a new worker', 'success?', !!isSuccess);
+        });
+
+        console.log('Work types mapping', currentWorkerTypesMaps);
+    } else {
+        console.log('RUNNING ON SINGLE PROCESS MODE');
+        startApp();
+    }
+} else {
+    startApp();
+}
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+    let port = parseInt(val, 10);
+
+    if (isNaN(port)) {
+        // named pipe
+        return val;
+    }
+
+    if (port >= 0) {
+        // port number
+        return port;
+    }
+
+    return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+    if (error.syscall !== 'listen') {
+        throw error;
+    }
+
+    var bind = typeof port === 'string'
+        ? 'Pipe ' + port
+        : 'Port ' + port;
+
+    // handle specific listen errors with friendly messages
+    switch (error.code) {
+        case 'EACCES':
+            console.error(bind + ' requires elevated privileges');
+            process.exit(1);
+            break;
+        case 'EADDRINUSE':
+            console.error(bind + ' is already in use');
+            process.exit(1);
+            break;
+        default:
+            throw error;
+    }
+}
